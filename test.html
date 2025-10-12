@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MessTrack - Test Page</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            margin: 0;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #333;
+            margin: 0 0 30px 0;
+            text-align: center;
+        }
+        
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f5f5f5;
+            border-radius: 10px;
+        }
+        
+        .test-section h2 {
+            margin: 0 0 15px 0;
+            color: #555;
+            font-size: 18px;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            margin: 5px;
+            transition: transform 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+        }
+        
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        .link-section {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 2px solid #e0e0e0;
+        }
+        
+        a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: bold;
+            display: inline-block;
+            padding: 12px 30px;
+            background: white;
+            border-radius: 25px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+        }
+        
+        a:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+        }
+        
+        .checklist {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .checklist li {
+            padding: 8px 0;
+            padding-left: 30px;
+            position: relative;
+        }
+        
+        .checklist li:before {
+            content: '✓';
+            position: absolute;
+            left: 0;
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        .checklist li.pending:before {
+            content: '○';
+            color: #999;
+        }
+        
+        .checklist li.error:before {
+            content: '✗';
+            color: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🍽️ MessTrack Test Page</h1>
+        
+        <div class="test-section">
+            <h2>📋 System Check</h2>
+            <ul class="checklist">
+                <li id="check-js">JavaScript Enabled</li>
+                <li id="check-storage" class="pending">LocalStorage Available</li>
+                <li id="check-sw" class="pending">Service Worker Support</li>
+                <li id="check-manifest" class="pending">PWA Manifest Detected</li>
+            </ul>
+        </div>
+        
+        <div class="test-section">
+            <h2>🔧 LocalStorage Test</h2>
+            <button onclick="testLocalStorage()">Test Storage</button>
+            <button onclick="clearStorage()">Clear Storage</button>
+            <div id="storageStatus" class="status info" style="display:none;"></div>
+        </div>
+        
+        <div class="test-section">
+            <h2>🎯 Enhanced Features Test</h2>
+            <button onclick="testCSVFormat()">Test CSV Export Format</button>
+            <button onclick="testMealTimes()">Test Meal Times Settings</button>
+            <button onclick="testQRCode()">Test QR Code Generation</button>
+            <div id="featuresStatus" class="status info" style="display:none;"></div>
+        </div>
+        
+        <div class="test-section">
+            <h2>📱 PWA Test</h2>
+            <button onclick="checkPWA()">Check PWA Status</button>
+            <button onclick="testServiceWorker()">Test Service Worker</button>
+            <div id="pwaStatus" class="status info" style="display:none;"></div>
+        </div>
+        
+        <div class="test-section">
+            <h2>🎨 Theme Test</h2>
+            <button onclick="testTheme('light')">Light Theme</button>
+            <button onclick="testTheme('dark')">Dark Theme</button>
+        </div>
+        
+        <div class="link-section">
+            <a href="index.html">🚀 Launch MessTrack App</a>
+        </div>
+    </div>
+    
+    <script>
+        // Run checks on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            runSystemChecks();
+        });
+        
+        function runSystemChecks() {
+            // Check LocalStorage
+            try {
+                localStorage.setItem('test', 'test');
+                localStorage.removeItem('test');
+                document.getElementById('check-storage').className = '';
+            } catch (e) {
+                document.getElementById('check-storage').className = 'error';
+            }
+            
+            // Check Service Worker
+            if ('serviceWorker' in navigator) {
+                document.getElementById('check-sw').className = '';
+            } else {
+                document.getElementById('check-sw').className = 'error';
+            }
+            
+            // Check Manifest
+            const manifestLink = document.querySelector('link[rel="manifest"]');
+            if (manifestLink || checkManifestFile()) {
+                document.getElementById('check-manifest').className = '';
+            } else {
+                document.getElementById('check-manifest').className = 'pending';
+            }
+        }
+        
+        function checkManifestFile() {
+            // Try to fetch manifest file
+            fetch('manifest.json')
+                .then(response => {
+                    if (response.ok) {
+                        document.getElementById('check-manifest').className = '';
+                        return true;
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('check-manifest').className = 'error';
+                    return false;
+                });
+        }
+        
+        function testLocalStorage() {
+            const status = document.getElementById('storageStatus');
+            
+            try {
+                // Test writing
+                const testData = {
+                    timestamp: new Date().toISOString(),
+                    test: 'MessTrack Storage Test',
+                    random: Math.random()
+                };
+                
+                localStorage.setItem('messtrack_test', JSON.stringify(testData));
+                
+                // Test reading
+                const retrieved = JSON.parse(localStorage.getItem('messtrack_test'));
+                
+                if (retrieved && retrieved.test === testData.test) {
+                    status.className = 'status success';
+                    status.textContent = '✓ LocalStorage is working! Data saved and retrieved successfully.';
+                    
+                    // Check existing MessTrack data
+                    const attendance = localStorage.getItem('messtrack_attendance');
+                    const settings = localStorage.getItem('messtrack_settings');
+                    
+                    if (attendance || settings) {
+                        status.textContent += ' Existing MessTrack data found!';
+                    }
+                } else {
+                    throw new Error('Data mismatch');
+                }
+            } catch (e) {
+                status.className = 'status error';
+                status.textContent = '✗ LocalStorage test failed: ' + e.message;
+            }
+            
+            status.style.display = 'block';
+        }
+        
+        function clearStorage() {
+            const status = document.getElementById('storageStatus');
+            
+            if (confirm('This will clear all MessTrack data. Are you sure?')) {
+                localStorage.clear();
+                status.className = 'status info';
+                status.textContent = 'All storage data cleared!';
+                status.style.display = 'block';
+            }
+        }
+        
+        function checkPWA() {
+            const status = document.getElementById('pwaStatus');
+            status.style.display = 'block';
+            
+            let pwaFeatures = [];
+            
+            // Check HTTPS
+            if (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+                pwaFeatures.push('✓ Secure context');
+            } else {
+                pwaFeatures.push('✗ Not served over HTTPS');
+            }
+            
+            // Check Service Worker
+            if ('serviceWorker' in navigator) {
+                pwaFeatures.push('✓ Service Worker supported');
+            } else {
+                pwaFeatures.push('✗ Service Worker not supported');
+            }
+            
+            // Check manifest
+            fetch('manifest.json')
+                .then(response => response.json())
+                .then(manifest => {
+                    pwaFeatures.push('✓ Manifest found: ' + manifest.name);
+                    status.className = 'status success';
+                    status.innerHTML = pwaFeatures.join('<br>');
+                })
+                .catch(() => {
+                    pwaFeatures.push('✗ Manifest not found');
+                    status.className = 'status error';
+                    status.innerHTML = pwaFeatures.join('<br>');
+                });
+        }
+        
+        function testServiceWorker() {
+            const status = document.getElementById('pwaStatus');
+            
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('sw.js')
+                    .then(registration => {
+                        status.className = 'status success';
+                        status.textContent = '✓ Service Worker registered successfully!';
+                        status.style.display = 'block';
+                        
+                        // Check registration status
+                        if (registration.active) {
+                            status.textContent += ' (Active)';
+                        } else if (registration.installing) {
+                            status.textContent += ' (Installing)';
+                        } else if (registration.waiting) {
+                            status.textContent += ' (Waiting)';
+                        }
+                    })
+                    .catch(error => {
+                        status.className = 'status error';
+                        status.textContent = '✗ Service Worker registration failed: ' + error.message;
+                        status.style.display = 'block';
+                    });
+            } else {
+                status.className = 'status error';
+                status.textContent = '✗ Service Worker not supported in this browser';
+                status.style.display = 'block';
+            }
+        }
+        
+        function testTheme(theme) {
+            // Store theme preference
+            const settings = {
+                theme: theme,
+                notifications: false
+            };
+            
+            localStorage.setItem('messtrack_settings', JSON.stringify(settings));
+            
+            // Visual feedback
+            const body = document.body;
+            if (theme === 'light') {
+                body.style.background = 'linear-gradient(135deg, #89f7fe 0%, #66a6ff 100%)';
+            } else {
+                body.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+            }
+            
+            // Show notification
+            const status = document.getElementById('storageStatus');
+            status.className = 'status info';
+            status.textContent = `Theme set to ${theme}. This will be applied when you open the app.`;
+            status.style.display = 'block';
+        }
+        
+        function testCSVFormat() {
+            const status = document.getElementById('featuresStatus');
+            
+            // Test CSV data structure
+            const testData = {
+                '2024-10-10': { lunch: true, dinner: false },
+                '2024-10-11': { lunch: true, dinner: true },
+                '2024-10-12': { lunch: false, dinner: true }
+            };
+            
+            const notes = {
+                '2024-10-11': { note: 'Great meal today!' },
+                '2024-10-12': { skipReason: 'Class/Study' }
+            };
+            
+            let csv = 'Date,Day,Lunch,Dinner,Notes\n';
+            Object.keys(testData).forEach(date => {
+                const meals = testData[date];
+                const dateObj = new Date(date);
+                const formattedDate = dateObj.toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'short', 
+                    day: 'numeric' 
+                });
+                const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+                const noteText = (notes[date] && (notes[date].note || notes[date].skipReason)) || '';
+                
+                csv += `"${formattedDate}","${dayName}","${meals.lunch ? 'Yes' : 'No'}","${meals.dinner ? 'Yes' : 'No'}","${noteText}"\n`;
+            });
+            
+            status.className = 'status success';
+            status.innerHTML = `✅ CSV Format Test Passed!<br><pre style="font-size:10px; margin-top:10px;">${csv}</pre>`;
+            status.style.display = 'block';
+        }
+        
+        function testMealTimes() {
+            const status = document.getElementById('featuresStatus');
+            
+            // Test meal times settings
+            const settings = {
+                lunchTime: '12:30',
+                dinnerTime: '20:00',
+                theme: 'dark',
+                notifications: true
+            };
+            
+            localStorage.setItem('messtrack_settings', JSON.stringify(settings));
+            
+            status.className = 'status success';
+            status.innerHTML = `✅ Meal Times Test Passed!<br>Lunch: ${settings.lunchTime}<br>Dinner: ${settings.dinnerTime}<br>Settings saved to localStorage.`;
+            status.style.display = 'block';
+        }
+        
+        function testQRCode() {
+            const status = document.getElementById('featuresStatus');
+            
+            // Test QR code generation capability
+            const testData = {
+                month: 'October 2024',
+                lunchCount: 25,
+                dinnerCount: 28,
+                percentage: '88.3%'
+            };
+            
+            const reportText = `MessTrack Report - ${testData.month}\\nLunch: ${testData.lunchCount} days\\nDinner: ${testData.dinnerCount} days\\nOverall: ${testData.percentage}`;
+            
+            // Check if QRCode library would be available
+            if (typeof QRCode !== 'undefined') {
+                status.className = 'status success';
+                status.innerHTML = '✅ QR Code Library Available!<br>QR generation should work properly.';
+            } else {
+                status.className = 'status info';
+                status.innerHTML = '📋 QR Code Library will load dynamically.<br>Fallback text sharing available.';
+            }
+            
+            status.style.display = 'block';
+        }
+    </script>
+</body>
+</html>

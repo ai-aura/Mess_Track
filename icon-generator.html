@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MessTrack Icon Generator</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 800px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        
+        .canvas-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        
+        .icon-item {
+            text-align: center;
+        }
+        
+        canvas {
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px;
+            transition: transform 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+        }
+        
+        .instructions {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        
+        .instructions h3 {
+            margin-top: 0;
+        }
+        
+        .instructions ol {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🍽️ MessTrack Icon Generator</h1>
+        <p>This page generates all required PWA icons for MessTrack.</p>
+        
+        <div class="canvas-container" id="canvasContainer"></div>
+        
+        <div style="text-align: center;">
+            <button onclick="generateIcons()">Generate Icons</button>
+            <button onclick="downloadAllIcons()">Download All Icons</button>
+        </div>
+        
+        <div class="instructions">
+            <h3>Instructions:</h3>
+            <ol>
+                <li>Click "Generate Icons" to create all icon sizes</li>
+                <li>Right-click on each canvas and save as PNG with the specified filename</li>
+                <li>Or click "Download All Icons" to download them automatically</li>
+                <li>Place all icon files in the same directory as index.html</li>
+            </ol>
+        </div>
+    </div>
+    
+    <script>
+        const sizes = [72, 96, 128, 144, 152, 192, 384, 512];
+        
+        function generateIcons() {
+            const container = document.getElementById('canvasContainer');
+            container.innerHTML = '';
+            
+            sizes.forEach(size => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'icon-item';
+                
+                const canvas = document.createElement('canvas');
+                canvas.width = size;
+                canvas.height = size;
+                canvas.id = `icon-${size}`;
+                
+                const ctx = canvas.getContext('2d');
+                
+                // Create gradient background
+                const gradient = ctx.createLinearGradient(0, 0, size, size);
+                gradient.addColorStop(0, '#667eea');
+                gradient.addColorStop(1, '#764ba2');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, size, size);
+                
+                // Add rounded corners effect
+                ctx.globalCompositeOperation = 'destination-in';
+                ctx.beginPath();
+                ctx.roundRect(0, 0, size, size, size * 0.15);
+                ctx.fill();
+                ctx.globalCompositeOperation = 'source-over';
+                
+                // Draw utensils icon
+                ctx.fillStyle = 'white';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                // Fork and knife using simple shapes
+                const centerX = size / 2;
+                const centerY = size / 2;
+                const scale = size / 100;
+                
+                // Fork
+                ctx.save();
+                ctx.translate(centerX - 15 * scale, centerY);
+                ctx.rotate(-0.1);
+                
+                // Fork handle
+                ctx.fillRect(-3 * scale, 0, 6 * scale, 30 * scale);
+                
+                // Fork prongs
+                ctx.fillRect(-3 * scale, -30 * scale, 2 * scale, 25 * scale);
+                ctx.fillRect(-1 * scale, -30 * scale, 2 * scale, 25 * scale);
+                ctx.fillRect(1 * scale, -30 * scale, 2 * scale, 25 * scale);
+                
+                ctx.restore();
+                
+                // Knife
+                ctx.save();
+                ctx.translate(centerX + 15 * scale, centerY);
+                ctx.rotate(0.1);
+                
+                // Knife handle
+                ctx.fillRect(-3 * scale, 0, 6 * scale, 30 * scale);
+                
+                // Knife blade
+                ctx.beginPath();
+                ctx.moveTo(-3 * scale, 0);
+                ctx.lineTo(-3 * scale, -30 * scale);
+                ctx.lineTo(3 * scale, -25 * scale);
+                ctx.lineTo(3 * scale, 0);
+                ctx.fill();
+                
+                ctx.restore();
+                
+                // Add text for larger icons
+                if (size >= 192) {
+                    ctx.font = `bold ${size * 0.08}px Arial`;
+                    ctx.fillText('MESS', centerX, centerY + size * 0.35);
+                }
+                
+                const label = document.createElement('p');
+                label.textContent = `icon-${size}.png (${size}x${size})`;
+                label.style.margin = '5px 0';
+                label.style.fontSize = '12px';
+                label.style.color = '#666';
+                
+                itemDiv.appendChild(canvas);
+                itemDiv.appendChild(label);
+                container.appendChild(itemDiv);
+            });
+        }
+        
+        function downloadAllIcons() {
+            sizes.forEach((size, index) => {
+                setTimeout(() => {
+                    const canvas = document.getElementById(`icon-${size}`);
+                    if (canvas) {
+                        const link = document.createElement('a');
+                        link.download = `icon-${size}.png`;
+                        canvas.toBlob(blob => {
+                            const url = URL.createObjectURL(blob);
+                            link.href = url;
+                            link.click();
+                            URL.revokeObjectURL(url);
+                        });
+                    }
+                }, index * 100); // Delay to prevent browser blocking
+            });
+        }
+        
+        // Generate icons on load
+        window.onload = generateIcons;
+    </script>
+</body>
+</html>
