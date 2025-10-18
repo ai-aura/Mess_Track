@@ -13,7 +13,7 @@ class MessTrack {
             summaries: {},
             notes: {},
             settings: {
-                theme: 'dark',
+                theme: 'light',
                 notifications: false,
                 lunchTime: '12:00',
                 dinnerTime: '19:00'
@@ -22,6 +22,16 @@ class MessTrack {
         this.bulkEditMode = false;
         this.selectedDays = new Set();
         this.currentSkipMeal = null;
+        this.customDateRange = null; // For date range picker
+        this.weeklyDays = []; // Store currently displayed days
+        
+        // Advanced features state
+        this.pullToRefresh = { startY: 0, pulling: false };
+        this.swipeNav = { startX: 0, swiping: false };
+        this.longPressTimer = null;
+        this.gestureHintsShown = JSON.parse(localStorage.getItem('gestureHintsShown') || '{}');
+        this.appVersion = '2.0.0';
+        
         this.init();
     }
 
@@ -146,11 +156,18 @@ class MessTrack {
     // ====================
     initializeUI() {
         this.applyTheme(this.data.settings.theme);
-        this.updateDateTime();
-        this.updateDashboard();
-        this.initializeMealTimes();
+        this.registerServiceWorker();
+        this.scheduleReminder();
+        
+        // Initialize advanced mobile features
+        this.initAdvancedFeatures();
+        
+        // Load today's page by default
         this.showPage('dashboard');
-
+        this.updateDashboard();
+        this.updateDateTime();
+        this.initializeMealTimes();
+        
         // Update date every minute
         setInterval(() => this.updateDateTime(), 60000);
     }
@@ -270,8 +287,102 @@ class MessTrack {
             shareReport.addEventListener('click', () => this.shareReport());
         }
 
+        // Bulk Edit Event Listeners
+        const bulkEditToggle = document.getElementById('bulkEditToggle');
+        const bulkEditCancel = document.getElementById('bulkEditCancel');
+        const bulkSelectAll = document.getElementById('bulkSelectAll');
+        const bulkSelectNone = document.getElementById('bulkSelectNone');
+        const bulkMarkLunch = document.getElementById('bulkMarkLunch');
+        const bulkMarkDinner = document.getElementById('bulkMarkDinner');
+        const bulkMarkBoth = document.getElementById('bulkMarkBoth');
+        const bulkClear = document.getElementById('bulkClear');
+        
+        if (bulkEditToggle) {
+            bulkEditToggle.addEventListener('click', () => this.toggleBulkEditMode());
+        }
+        
+        if (bulkEditCancel) {
+            bulkEditCancel.addEventListener('click', () => this.toggleBulkEditMode());
+        }
+        
+        if (bulkSelectAll) {
+            bulkSelectAll.addEventListener('click', () => this.bulkSelectAll());
+        }
+        
+        if (bulkSelectNone) {
+            bulkSelectNone.addEventListener('click', () => this.bulkSelectNone());
+        }
+        
+        if (bulkMarkLunch) {
+            bulkMarkLunch.addEventListener('click', () => this.bulkMarkMeal('lunch'));
+        }
+        
+        if (bulkMarkDinner) {
+            bulkMarkDinner.addEventListener('click', () => this.bulkMarkMeal('dinner'));
+        }
+        
+        if (bulkMarkBoth) {
+            bulkMarkBoth.addEventListener('click', () => this.bulkMarkMeal('both'));
+        }
+        
+        if (bulkClear) {
+            bulkClear.addEventListener('click', () => this.bulkClearMeals());
+        }
+        
+        // Date Range Picker Event Listeners
+        const dateRangeToggle = document.getElementById('dateRangeToggle');
+        const closeDateRange = document.getElementById('closeDateRange');
+        const applyDateRange = document.getElementById('applyDateRange');
+        const resetToWeekly = document.getElementById('resetToWeekly');
+        
+        if (dateRangeToggle) {
+            dateRangeToggle.addEventListener('click', () => this.toggleDateRangePanel());
+        }
+        
+        if (closeDateRange) {
+            closeDateRange.addEventListener('click', () => this.toggleDateRangePanel());
+        }
+        
+        if (applyDateRange) {
+            applyDateRange.addEventListener('click', () => this.applyCustomDateRange());
+        }
+        
+        if (resetToWeekly) {
+            resetToWeekly.addEventListener('click', () => this.resetToWeeklyView());
+        }
+        
+        // Export Selected Event Listeners
+        const exportSelectedCSV = document.getElementById('exportSelectedCSV');
+        const exportSelectedPDF = document.getElementById('exportSelectedPDF');
+        
+        if (exportSelectedCSV) {
+            exportSelectedCSV.addEventListener('click', () => this.exportSelectedToCSV());
+        }
+        
+        if (exportSelectedPDF) {
+            exportSelectedPDF.addEventListener('click', () => this.exportSelectedToPDF());
+        }
+        
+        // Notification Toggle
+        const notificationToggle = document.getElementById('notificationToggle');
+        if (notificationToggle) {
+            notificationToggle.checked = this.data.settings.notifications;
+            notificationToggle.addEventListener('change', (e) => {
+                this.data.settings.notifications = e.target.checked;
+                this.saveData();
+                if (e.target.checked) {
+                    this.requestNotificationPermission();
+                } else {
+                    this.showToast('Notifications disabled');
+                }
+            });
+        }
+        
         // FAB Event Listeners
         this.setupFAB();
+        
+        // Skip Reason Modal
+        this.setupSkipReasonModal();
         
         // Settings with meal times
         const lunchTime = document.getElementById('lunchTime');
@@ -977,32 +1088,46 @@ class MessTrack {
         if (!this.data.settings.notifications) return;
 
         const now = new Date();
-        const lunchTime = new Date();
-        lunchTime.setHours(12, 30, 0, 0);
-
-        const dinnerTime = new Date();
-        dinnerTime.setHours(19, 30, 0, 0);
-
         const today = this.getTodayString();
         const todayData = this.data.attendance[today] || {
             lunch: false,
             dinner: false
         };
 
+        // Parse lunch time from settings
+        const lunchTimeParts = this.data.settings.lunchTime.split(':');
+        const lunchTime = new Date();
+        lunchTime.setHours(parseInt(lunchTimeParts[0]), parseInt(lunchTimeParts[1]) - 30, 0, 0); // 30 min before
+
+        // Parse dinner time from settings
+        const dinnerTimeParts = this.data.settings.dinnerTime.split(':');
+        const dinnerTime = new Date();
+        dinnerTime.setHours(parseInt(dinnerTimeParts[0]), parseInt(dinnerTimeParts[1]) - 30, 0, 0); // 30 min before
+
         // Schedule lunch reminder
         if (!todayData.lunch && now < lunchTime) {
             const lunchDelay = lunchTime - now;
-            setTimeout(() => {
-                this.showNotification('Lunch Reminder', 'Don\'t forget to mark your lunch attendance!');
-            }, lunchDelay);
+            if (lunchDelay > 0 && lunchDelay < 24 * 60 * 60 * 1000) { // Only if within 24 hours
+                setTimeout(() => {
+                    const currentData = this.data.attendance[this.getTodayString()] || { lunch: false, dinner: false };
+                    if (!currentData.lunch) {
+                        this.showNotification('Lunch Reminder', '🍽️ Lunch time in 30 minutes! Don\'t forget to mark your attendance.');
+                    }
+                }, lunchDelay);
+            }
         }
 
         // Schedule dinner reminder
         if (!todayData.dinner && now < dinnerTime) {
             const dinnerDelay = dinnerTime - now;
-            setTimeout(() => {
-                this.showNotification('Dinner Reminder', 'Don\'t forget to mark your dinner attendance!');
-            }, dinnerDelay);
+            if (dinnerDelay > 0 && dinnerDelay < 24 * 60 * 60 * 1000) { // Only if within 24 hours
+                setTimeout(() => {
+                    const currentData = this.data.attendance[this.getTodayString()] || { lunch: false, dinner: false };
+                    if (!currentData.dinner) {
+                        this.showNotification('Dinner Reminder', '🌙 Dinner time in 30 minutes! Don\'t forget to mark your attendance.');
+                    }
+                }, dinnerDelay);
+            }
         }
     }
 
@@ -1114,17 +1239,30 @@ class MessTrack {
         const weeklyGrid = document.getElementById('weeklyGrid');
         if (!weeklyGrid) return;
         
-        const today = new Date();
-        const last7Days = [];
+        let displayDays = [];
         
-        for (let i = 6; i >= 0; i--) {
-            const date = new Date(today);
-            date.setDate(date.getDate() - i);
-            last7Days.push(date);
+        if (this.customDateRange) {
+            // Use custom date range
+            const start = new Date(this.customDateRange.start);
+            const end = new Date(this.customDateRange.end);
+            
+            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                displayDays.push(new Date(d));
+            }
+        } else {
+            // Default: last 7 days
+            const today = new Date();
+            for (let i = 6; i >= 0; i--) {
+                const date = new Date(today);
+                date.setDate(date.getDate() - i);
+                displayDays.push(date);
+            }
         }
         
+        this.weeklyDays = displayDays; // Store for export
+        
         let html = '';
-        last7Days.forEach(date => {
+        displayDays.forEach(date => {
             const dateStr = this.formatDateToString(date);
             const dayData = this.data.attendance[dateStr] || { lunch: false, dinner: false };
             const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
@@ -1132,8 +1270,8 @@ class MessTrack {
             const isToday = dateStr === this.getTodayString();
             
             html += `
-                <div class="glass p-4 flex items-center justify-between ${isToday ? 'ring-2 ring-blue-400' : ''} ${this.bulkEditMode ? 'cursor-pointer' : ''}" 
-                     data-date="${dateStr}" onclick="${this.bulkEditMode ? 'messTrack.toggleDaySelect(this)' : ''}">
+                <div class="glass p-4 flex items-center justify-between ${isToday ? 'ring-2 ring-blue-400' : ''} ${this.bulkEditMode ? 'cursor-pointer day-selectable' : ''}" 
+                     data-date="${dateStr}">
                     <div class="flex items-center gap-4">
                         ${this.bulkEditMode ? '<input type="checkbox" class="day-checkbox">' : ''}
                         <div>
@@ -1156,6 +1294,352 @@ class MessTrack {
         });
         
         weeklyGrid.innerHTML = html;
+        
+        // Add event listeners for day selection in bulk edit mode
+        if (this.bulkEditMode) {
+            document.querySelectorAll('.day-selectable').forEach(dayElement => {
+                dayElement.addEventListener('click', (e) => {
+                    this.toggleDaySelect(dayElement);
+                });
+            });
+        }
+    }
+    
+    // Bulk Edit Functions
+    toggleBulkEditMode() {
+        this.bulkEditMode = !this.bulkEditMode;
+        this.selectedDays.clear();
+        
+        const bulkEditPanel = document.getElementById('bulkEditPanel');
+        const bulkEditToggle = document.getElementById('bulkEditToggle');
+        
+        if (this.bulkEditMode) {
+            bulkEditPanel.classList.remove('hidden');
+            bulkEditToggle.innerHTML = '<i class="fas fa-times mr-2"></i>Cancel';
+            this.showToast('Bulk edit mode enabled. Select days to edit.');
+        } else {
+            bulkEditPanel.classList.add('hidden');
+            bulkEditToggle.innerHTML = '<i class="fas fa-edit mr-2"></i>Bulk Edit';
+            this.showToast('Bulk edit mode disabled.');
+        }
+        
+        this.updateWeeklyView();
+    }
+    
+    toggleDaySelect(element) {
+        const dateStr = element.dataset.date;
+        const checkbox = element.querySelector('.day-checkbox');
+        
+        if (checkbox) {
+            checkbox.checked = !checkbox.checked;
+            
+            if (checkbox.checked) {
+                this.selectedDays.add(dateStr);
+                element.style.background = 'rgba(59, 130, 246, 0.2)';
+            } else {
+                this.selectedDays.delete(dateStr);
+                element.style.background = '';
+            }
+        }
+    }
+    
+    bulkSelectAll() {
+        document.querySelectorAll('.day-checkbox').forEach((checkbox, index) => {
+            checkbox.checked = true;
+            const dateElement = checkbox.closest('[data-date]');
+            if (dateElement) {
+                const dateStr = dateElement.dataset.date;
+                this.selectedDays.add(dateStr);
+                dateElement.style.background = 'rgba(59, 130, 246, 0.2)';
+            }
+        });
+        this.showToast(`Selected all ${this.selectedDays.size} days`);
+    }
+    
+    bulkSelectNone() {
+        document.querySelectorAll('.day-checkbox').forEach(checkbox => {
+            checkbox.checked = false;
+            const dateElement = checkbox.closest('[data-date]');
+            if (dateElement) {
+                dateElement.style.background = '';
+            }
+        });
+        this.selectedDays.clear();
+        this.showToast('Cleared all selections');
+    }
+    
+    bulkMarkMeal(type) {
+        if (this.selectedDays.size === 0) {
+            this.showToast('Please select at least one day');
+            return;
+        }
+        
+        let count = 0;
+        this.selectedDays.forEach(dateStr => {
+            if (!this.data.attendance[dateStr]) {
+                this.data.attendance[dateStr] = { lunch: false, dinner: false };
+            }
+            
+            if (type === 'lunch') {
+                this.data.attendance[dateStr].lunch = true;
+            } else if (type === 'dinner') {
+                this.data.attendance[dateStr].dinner = true;
+            } else if (type === 'both') {
+                this.data.attendance[dateStr].lunch = true;
+                this.data.attendance[dateStr].dinner = true;
+            }
+            count++;
+        });
+        
+        this.saveData();
+        this.updateWeeklyView();
+        
+        const mealText = type === 'both' ? 'lunch and dinner' : type;
+        this.showToast(`Marked ${mealText} for ${count} day(s) ✓`);
+    }
+    
+    bulkClearMeals() {
+        if (this.selectedDays.size === 0) {
+            this.showToast('Please select at least one day');
+            return;
+        }
+        
+        if (confirm(`Clear all meals for ${this.selectedDays.size} selected day(s)?`)) {
+            let count = 0;
+            this.selectedDays.forEach(dateStr => {
+                if (this.data.attendance[dateStr]) {
+                    this.data.attendance[dateStr].lunch = false;
+                    this.data.attendance[dateStr].dinner = false;
+                    count++;
+                }
+            });
+            
+            this.saveData();
+            this.updateWeeklyView();
+            this.showToast(`Cleared meals for ${count} day(s)`);
+        }
+    }
+    
+    // Date Range Picker Functions
+    toggleDateRangePanel() {
+        const panel = document.getElementById('dateRangePanel');
+        if (panel.classList.contains('hidden')) {
+            panel.classList.remove('hidden');
+            this.initializeDateInputs();
+        } else {
+            panel.classList.add('hidden');
+        }
+    }
+    
+    initializeDateInputs() {
+        const today = new Date();
+        const sevenDaysAgo = new Date(today);
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        
+        const startDateInput = document.getElementById('startDate');
+        const endDateInput = document.getElementById('endDate');
+        
+        if (startDateInput) {
+            startDateInput.value = this.formatDateToString(sevenDaysAgo);
+        }
+        if (endDateInput) {
+            endDateInput.value = this.formatDateToString(today);
+        }
+    }
+    
+    applyCustomDateRange() {
+        const startDate = document.getElementById('startDate').value;
+        const endDate = document.getElementById('endDate').value;
+        
+        if (!startDate || !endDate) {
+            this.showToast('Please select both start and end dates');
+            return;
+        }
+        
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        
+        if (start > end) {
+            this.showToast('Start date must be before end date');
+            return;
+        }
+        
+        const daysDiff = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+        
+        if (daysDiff > 90) {
+            this.showToast('Please select a range of 90 days or less');
+            return;
+        }
+        
+        this.customDateRange = { start: startDate, end: endDate };
+        this.updateWeeklyView();
+        this.toggleDateRangePanel();
+        this.showToast(`Showing ${daysDiff} days from ${start.toLocaleDateString()} to ${end.toLocaleDateString()}`);
+    }
+    
+    resetToWeeklyView() {
+        this.customDateRange = null;
+        this.updateWeeklyView();
+        this.toggleDateRangePanel();
+        this.showToast('Reset to last 7 days view');
+    }
+    
+    // Export Selected Functions
+    exportSelectedToCSV() {
+        if (this.selectedDays.size === 0) {
+            this.showToast('Please select at least one day to export');
+            return;
+        }
+        
+        let csv = 'Date,Day,Lunch,Dinner,Notes\n';
+        const sortedDates = Array.from(this.selectedDays).sort();
+        
+        sortedDates.forEach(date => {
+            const meals = this.data.attendance[date] || { lunch: false, dinner: false };
+            const dateObj = new Date(date);
+            const formattedDate = dateObj.toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+            });
+            const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+            const notes = this.data.notes[date] || {};
+            const noteText = notes.note || notes.skipReason || '';
+            
+            const escapedNotes = noteText.replace(/"/g, '""');
+            csv += `"${formattedDate}","${dayName}","${meals.lunch ? 'Yes' : 'No'}","${meals.dinner ? 'Yes' : 'No'}","${escapedNotes}"\n`;
+        });
+        
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `MessTrack_Selected_${this.selectedDays.size}_Days.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        this.showToast(`Exported ${this.selectedDays.size} selected days to CSV! 📊`);
+    }
+    
+    exportSelectedToPDF() {
+        if (this.selectedDays.size === 0) {
+            this.showToast('Please select at least one day to export');
+            return;
+        }
+        
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        
+        const primaryColor = [102, 126, 234];
+        const successColor = [34, 197, 94];
+        const dangerColor = [239, 68, 68];
+        
+        // Header
+        doc.setFillColor(...primaryColor);
+        doc.rect(0, 0, 210, 40, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(24);
+        doc.text('🍽️ MessTrack - Selected Days', 20, 25);
+        doc.setFontSize(14);
+        doc.text(`${this.selectedDays.size} Days Selected`, 20, 35);
+        doc.setTextColor(0, 0, 0);
+        
+        let yPos = 55;
+        
+        // Calculate summary
+        let lunchCount = 0, dinnerCount = 0;
+        Array.from(this.selectedDays).forEach(date => {
+            const meals = this.data.attendance[date] || { lunch: false, dinner: false };
+            if (meals.lunch) lunchCount++;
+            if (meals.dinner) dinnerCount++;
+        });
+        
+        const totalPossible = this.selectedDays.size * 2;
+        const totalAttended = lunchCount + dinnerCount;
+        const percentage = totalPossible > 0 ? ((totalAttended / totalPossible) * 100).toFixed(1) : '0.0';
+        
+        // Summary
+        doc.setFontSize(16);
+        doc.setTextColor(...primaryColor);
+        doc.text('📊 Summary', 20, yPos);
+        yPos += 15;
+        
+        doc.setFontSize(12);
+        doc.setTextColor(0, 0, 0);
+        doc.text(`Lunch: ${lunchCount} days`, 20, yPos);
+        yPos += 7;
+        doc.text(`Dinner: ${dinnerCount} days`, 20, yPos);
+        yPos += 7;
+        doc.text(`Overall: ${percentage}%`, 20, yPos);
+        yPos += 15;
+        
+        // Table
+        doc.setFontSize(14);
+        doc.setTextColor(...primaryColor);
+        doc.text('📅 Daily Records', 20, yPos);
+        yPos += 10;
+        
+        // Table header
+        doc.setFillColor(248, 250, 252);
+        doc.rect(20, yPos, 170, 10, 'F');
+        doc.setFontSize(10);
+        doc.setTextColor(0, 0, 0);
+        doc.text('Date', 25, yPos + 7);
+        doc.text('Day', 65, yPos + 7);
+        doc.text('Lunch', 90, yPos + 7);
+        doc.text('Dinner', 120, yPos + 7);
+        doc.text('Notes', 150, yPos + 7);
+        yPos += 12;
+        
+        const sortedDates = Array.from(this.selectedDays).sort();
+        sortedDates.forEach((date, index) => {
+            const meals = this.data.attendance[date] || { lunch: false, dinner: false };
+            const dateObj = new Date(date);
+            const dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            const dayStr = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+            const notes = this.data.notes[date] || {};
+            
+            if (index % 2 === 0) {
+                doc.setFillColor(249, 250, 251);
+                doc.rect(20, yPos - 2, 170, 10, 'F');
+            }
+            
+            doc.setTextColor(0, 0, 0);
+            doc.text(dateStr, 25, yPos + 5);
+            doc.text(dayStr, 65, yPos + 5);
+            
+            if (meals.lunch) {
+                doc.setTextColor(successColor[0], successColor[1], successColor[2]);
+            } else {
+                doc.setTextColor(dangerColor[0], dangerColor[1], dangerColor[2]);
+            }
+            doc.text(meals.lunch ? '✓' : '✗', 95, yPos + 5);
+            
+            if (meals.dinner) {
+                doc.setTextColor(successColor[0], successColor[1], successColor[2]);
+            } else {
+                doc.setTextColor(dangerColor[0], dangerColor[1], dangerColor[2]);
+            }
+            doc.text(meals.dinner ? '✓' : '✗', 125, yPos + 5);
+            
+            doc.setTextColor(0, 0, 0);
+            if (notes.note || notes.skipReason) {
+                doc.setTextColor(59, 130, 246);
+                doc.text('📝', 155, yPos + 5);
+            }
+            
+            yPos += 10;
+            
+            if (yPos > 270) {
+                doc.addPage();
+                yPos = 35;
+            }
+        });
+        
+        doc.save(`MessTrack_Selected_${this.selectedDays.size}_Days.pdf`);
+        this.showToast(`Exported ${this.selectedDays.size} selected days to PDF! 📄`);
     }
     
     formatDateToString(date) {
@@ -1203,23 +1687,50 @@ class MessTrack {
     }
     
     generateQRCodeWithLibrary(canvas, container, text) {
-        if (canvas && typeof QRCode !== 'undefined') {
-            QRCode.toCanvas(canvas, text, {
-                width: 200,
-                margin: 2,
-                color: {
-                    dark: '#000000',
-                    light: '#FFFFFF'
-                }
-            }, (error) => {
-                if (error) {
-                    console.error('QR Code error:', error);
-                    this.showFallbackQR(container, text);
-                } else {
+        if (canvas) {
+            try {
+                // Clear canvas first
+                canvas.width = 250;
+                canvas.height = 250;
+                
+                // Use the qrcode library's toCanvas method
+                if (typeof QRCode !== 'undefined' && QRCode.toCanvas) {
+                    QRCode.toCanvas(canvas, text, {
+                        width: 250,
+                        margin: 2,
+                        color: {
+                            dark: '#000000',
+                            light: '#FFFFFF'
+                        }
+                    }, (error) => {
+                        if (error) {
+                            console.error('QR Code error:', error);
+                            this.showFallbackQR(container, text);
+                        } else {
+                            container.classList.remove('hidden');
+                            this.showToast('QR code generated successfully! 📱');
+                        }
+                    });
+                } else if (typeof QRCode !== 'undefined') {
+                    // Alternative: use QRCode constructor
+                    canvas.innerHTML = '';
+                    new QRCode(canvas, {
+                        text: text,
+                        width: 250,
+                        height: 250,
+                        colorDark: '#000000',
+                        colorLight: '#ffffff',
+                        correctLevel: QRCode.CorrectLevel.H
+                    });
                     container.classList.remove('hidden');
                     this.showToast('QR code generated successfully! 📱');
+                } else {
+                    throw new Error('QRCode library not loaded');
                 }
-            });
+            } catch (error) {
+                console.error('QR generation error:', error);
+                this.showFallbackQR(container, text);
+            }
         } else {
             this.showFallbackQR(container, text);
         }
@@ -1355,10 +1866,403 @@ class MessTrack {
             navigator.serviceWorker.register('sw.js')
                 .then(registration => {
                     console.log('Service Worker registered');
+                    // Check for updates
+                    registration.addEventListener('updatefound', () => {
+                        const newWorker = registration.installing;
+                        newWorker.addEventListener('statechange', () => {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                this.showUpdatePrompt();
+                            }
+                        });
+                    });
                 })
                 .catch(error => {
                     console.log('Service Worker registration failed:', error);
                 });
+        }
+    }
+    
+    // ====================
+    // Advanced Mobile Features
+    // ====================
+    initAdvancedFeatures() {
+        this.initSplashScreen();
+        this.initPullToRefresh();
+        this.initSwipeNavigation();
+        this.initHapticFeedback();
+        this.initGestureHints();
+        this.initTabBadges();
+        this.initLongPressMenus();
+        this.initOfflineDetection();
+        this.handlePWAShortcuts();
+        this.checkForUpdates();
+    }
+    
+    // 1. Splash Screen
+    initSplashScreen() {
+        const splash = document.getElementById('splashScreen');
+        setTimeout(() => {
+            splash.classList.add('hidden');
+            setTimeout(() => splash.remove(), 500);
+        }, 2000);
+    }
+    
+    // 2. Pull to Refresh
+    initPullToRefresh() {
+        const mainContent = document.getElementById('mainContent');
+        const pullIndicator = document.querySelector('.pull-to-refresh');
+        let startY = 0;
+        let currentY = 0;
+        let pulling = false;
+        
+        mainContent.addEventListener('touchstart', (e) => {
+            if (mainContent.scrollTop === 0) {
+                startY = e.touches[0].clientY;
+                pulling = true;
+            }
+        });
+        
+        mainContent.addEventListener('touchmove', (e) => {
+            if (!pulling) return;
+            
+            currentY = e.touches[0].clientY;
+            const diff = currentY - startY;
+            
+            if (diff > 0 && diff < 150) {
+                pullIndicator.style.transform = `translateY(${diff}px)`;
+                pullIndicator.style.opacity = diff / 150;
+            }
+        });
+        
+        mainContent.addEventListener('touchend', () => {
+            if (!pulling) return;
+            
+            const diff = currentY - startY;
+            if (diff > 100) {
+                pullIndicator.classList.add('pulling');
+                this.hapticFeedback('medium');
+                this.refreshData();
+                setTimeout(() => {
+                    pullIndicator.classList.remove('pulling');
+                    pullIndicator.style.transform = '';
+                    pullIndicator.style.opacity = '';
+                }, 1000);
+            } else {
+                pullIndicator.style.transform = '';
+                pullIndicator.style.opacity = '';
+            }
+            pulling = false;
+        });
+    }
+    
+    refreshData() {
+        this.updateDashboard();
+        this.updateWeeklyView();
+        this.updateMonthCalendar();
+        this.showToast('🔄 Data refreshed!');
+    }
+    
+    // 3. Swipe Navigation
+    initSwipeNavigation() {
+        const pages = ['dashboard', 'weekly', 'history', 'summary', 'settings'];
+        let startX = 0;
+        let currentX = 0;
+        let swiping = false;
+        
+        document.addEventListener('touchstart', (e) => {
+            if (e.target.closest('.nav-item') || e.target.closest('button') || e.target.closest('input')) {
+                return;
+            }
+            startX = e.touches[0].clientX;
+            swiping = true;
+        });
+        
+        document.addEventListener('touchmove', (e) => {
+            if (!swiping) return;
+            currentX = e.touches[0].clientX;
+        });
+        
+        document.addEventListener('touchend', () => {
+            if (!swiping) return;
+            
+            const diff = currentX - startX;
+            const threshold = 100;
+            
+            if (Math.abs(diff) > threshold) {
+                const currentIndex = pages.indexOf(this.currentPage);
+                let newIndex;
+                
+                if (diff > 0 && currentIndex > 0) {
+                    // Swipe right - previous page
+                    newIndex = currentIndex - 1;
+                    this.hapticFeedback('light');
+                } else if (diff < 0 && currentIndex < pages.length - 1) {
+                    // Swipe left - next page
+                    newIndex = currentIndex + 1;
+                    this.hapticFeedback('light');
+                }
+                
+                if (newIndex !== undefined) {
+                    this.showPage(pages[newIndex]);
+                }
+            }
+            
+            swiping = false;
+        });
+    }
+    
+    // 4. Haptic Feedback
+    initHapticFeedback() {
+        // Add haptic to all navigation items
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', () => this.hapticFeedback('light'));
+        });
+        
+        // Add haptic to buttons
+        document.querySelectorAll('.btn-glass').forEach(btn => {
+            btn.addEventListener('click', () => this.hapticFeedback('medium'));
+        });
+    }
+    
+    hapticFeedback(intensity = 'medium') {
+        if ('vibrate' in navigator) {
+            const patterns = {
+                light: 10,
+                medium: 20,
+                heavy: 30
+            };
+            navigator.vibrate(patterns[intensity] || 20);
+        }
+    }
+    
+    // 5. Gesture Hints
+    initGestureHints() {
+        const hints = [
+            { key: 'swipe', text: '👈 Swipe to navigate pages 👉', delay: 3000 },
+            { key: 'pull', text: '⬇️ Pull down to refresh', delay: 8000 },
+            { key: 'longPress', text: '⏱️ Long press nav icons for quick actions', delay: 13000 }
+        ];
+        
+        hints.forEach(hint => {
+            if (!this.gestureHintsShown[hint.key]) {
+                setTimeout(() => this.showGestureHint(hint.text, hint.key), hint.delay);
+            }
+        });
+    }
+    
+    showGestureHint(text, key) {
+        const container = document.getElementById('gestureHints');
+        const hint = document.createElement('div');
+        hint.className = 'gesture-hint';
+        hint.textContent = text;
+        container.appendChild(hint);
+        
+        setTimeout(() => {
+            hint.remove();
+            this.gestureHintsShown[key] = true;
+            localStorage.setItem('gestureHintsShown', JSON.stringify(this.gestureHintsShown));
+        }, 4000);
+    }
+    
+    // 6. Tab Bar Badges
+    initTabBadges() {
+        this.updateTabBadges();
+        // Update badges when data changes
+        setInterval(() => this.updateTabBadges(), 30000);
+    }
+    
+    updateTabBadges() {
+        const today = this.getTodayString();
+        const todayData = this.data.attendance[today] || { lunch: false, dinner: false };
+        
+        // Dashboard badge - show if meals not marked
+        const dashboardNav = document.querySelector('[data-page="dashboard"]');
+        let pendingCount = 0;
+        if (!todayData.lunch) pendingCount++;
+        if (!todayData.dinner) pendingCount++;
+        
+        this.updateBadge(dashboardNav, pendingCount);
+        
+        // Weekly badge - show number of days in selection
+        const weeklyNav = document.querySelector('[data-page="weekly"]');
+        if (this.bulkEditMode && this.selectedDays.size > 0) {
+            this.updateBadge(weeklyNav, this.selectedDays.size);
+        } else {
+            this.updateBadge(weeklyNav, 0);
+        }
+    }
+    
+    updateBadge(element, count) {
+        if (!element) return;
+        
+        let badge = element.querySelector('.nav-badge');
+        if (count > 0) {
+            if (!badge) {
+                badge = document.createElement('span');
+                badge.className = 'nav-badge';
+                element.style.position = 'relative';
+                element.appendChild(badge);
+            }
+            badge.textContent = count;
+        } else if (badge) {
+            badge.remove();
+        }
+    }
+    
+    // 7. Long Press Menus
+    initLongPressMenus() {
+        document.querySelectorAll('.nav-item').forEach(item => {
+            let pressTimer;
+            
+            item.addEventListener('touchstart', (e) => {
+                pressTimer = setTimeout(() => {
+                    this.hapticFeedback('heavy');
+                    this.showLongPressMenu(item, e.touches[0].clientX, e.touches[0].clientY);
+                }, 500);
+            });
+            
+            item.addEventListener('touchend', () => {
+                clearTimeout(pressTimer);
+            });
+            
+            item.addEventListener('touchmove', () => {
+                clearTimeout(pressTimer);
+            });
+        });
+    }
+    
+    showLongPressMenu(navItem, x, y) {
+        const page = navItem.dataset.page;
+        const menu = document.getElementById('longPressMenu');
+        
+        const actions = {
+            dashboard: [
+                { icon: 'fa-sun', text: 'Quick Lunch', action: () => this.markMeal('lunch') },
+                { icon: 'fa-moon', text: 'Quick Dinner', action: () => this.markMeal('dinner') },
+                { icon: 'fa-check-double', text: 'Mark Both', action: () => this.markBothMeals() }
+            ],
+            weekly: [
+                { icon: 'fa-edit', text: 'Bulk Edit', action: () => this.toggleBulkEditMode() },
+                { icon: 'fa-calendar-alt', text: 'Date Range', action: () => this.toggleDateRangePanel() },
+                { icon: 'fa-download', text: 'Export', action: () => this.exportToCSV() }
+            ],
+            history: [
+                { icon: 'fa-chevron-left', text: 'Previous Month', action: () => this.changeMonth(-1) },
+                { icon: 'fa-chevron-right', text: 'Next Month', action: () => this.changeMonth(1) },
+                { icon: 'fa-calendar-day', text: 'This Month', action: () => this.goToCurrentMonth() }
+            ],
+            summary: [
+                { icon: 'fa-qrcode', text: 'Generate QR', action: () => this.generateQRCode() },
+                { icon: 'fa-file-pdf', text: 'Export PDF', action: () => this.exportToPDF() },
+                { icon: 'fa-chart-line', text: 'View Stats', action: () => {} }
+            ],
+            settings: [
+                { icon: 'fa-moon', text: 'Toggle Theme', action: () => this.toggleTheme() },
+                { icon: 'fa-bell', text: 'Notifications', action: () => this.toggleNotifications() },
+                { icon: 'fa-trash', text: 'Clear Data', action: () => this.confirmClearData() }
+            ]
+        };
+        
+        const menuActions = actions[page] || [];
+        menu.innerHTML = menuActions.map(action => `
+            <div class="long-press-item" onclick="messTrack.closeLongPressMenu(); (${action.action.toString()})()">
+                <i class="fas ${action.icon}"></i>${action.text}
+            </div>
+        `).join('');
+        
+        menu.style.left = `${x - 100}px`;
+        menu.style.top = `${y - 50}px`;
+        menu.classList.add('show');
+        
+        // Close on outside click
+        setTimeout(() => {
+            document.addEventListener('click', () => this.closeLongPressMenu(), { once: true });
+        }, 100);
+    }
+    
+    closeLongPressMenu() {
+        const menu = document.getElementById('longPressMenu');
+        menu.classList.remove('show');
+    }
+    
+    // 8. PWA Shortcuts Handler
+    handlePWAShortcuts() {
+        const params = new URLSearchParams(window.location.search);
+        const action = params.get('action');
+        const page = params.get('page');
+        
+        if (action === 'lunch') {
+            setTimeout(() => {
+                this.markMeal('lunch');
+                this.showToast('Lunch marked via shortcut! 🍽️');
+            }, 2500);
+        } else if (action === 'dinner') {
+            setTimeout(() => {
+                this.markMeal('dinner');
+                this.showToast('Dinner marked via shortcut! 🌙');
+            }, 2500);
+        }
+        
+        if (page && page !== 'dashboard') {
+            setTimeout(() => this.showPage(page), 2500);
+        }
+    }
+    
+    // 9. Offline Detection
+    initOfflineDetection() {
+        const banner = document.getElementById('offlineBanner');
+        
+        window.addEventListener('online', () => {
+            banner.classList.remove('show');
+            this.showToast('✅ Back online!');
+            this.hapticFeedback('light');
+        });
+        
+        window.addEventListener('offline', () => {
+            banner.classList.add('show');
+            this.hapticFeedback('heavy');
+        });
+        
+        // Check initial state
+        if (!navigator.onLine) {
+            banner.classList.add('show');
+        }
+    }
+    
+    // 10. Update Prompt
+    showUpdatePrompt() {
+        const prompt = document.getElementById('updatePrompt');
+        prompt.classList.add('show');
+        
+        document.getElementById('updateNow').addEventListener('click', () => {
+            this.hapticFeedback('medium');
+            window.location.reload();
+        });
+        
+        document.getElementById('dismissUpdate').addEventListener('click', () => {
+            prompt.classList.remove('show');
+        });
+    }
+    
+    checkForUpdates() {
+        const lastVersion = localStorage.getItem('appVersion');
+        if (lastVersion && lastVersion !== this.appVersion) {
+            setTimeout(() => this.showUpdatePrompt(), 5000);
+        }
+        localStorage.setItem('appVersion', this.appVersion);
+    }
+    
+    toggleNotifications() {
+        const toggle = document.getElementById('notificationToggle');
+        if (toggle) {
+            toggle.click();
+        }
+    }
+    
+    confirmClearData() {
+        if (confirm('Are you sure you want to clear all data? This cannot be undone!')) {
+            localStorage.clear();
+            location.reload();
         }
     }
 }
