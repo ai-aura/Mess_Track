@@ -29,6 +29,9 @@ An offline-first Progressive Web App (PWA) for hostel students to track their me
 - 📱 **QR Code Sharing**: Generate QR codes for easy report sharing
 - 📝 **Skip Reasons**: Track why meals were skipped with notes
 - 🎨 **Enhanced PDF**: Professional reports with colors and statistics
+- 📲 **Smart Install**: One-tap PWA installation with analytics tracking
+- 🔔 **Meal Notifications**: Get reminded at your custom meal times
+- 📊 **Enhanced About**: Detailed app info with privacy policy
 
 ## 🚀 Getting Started
 

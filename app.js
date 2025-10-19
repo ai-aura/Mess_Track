@@ -33,6 +33,10 @@ class MessTrack {
         this.appVersion = '2.0.0';
         // PWA install state
         this.deferredPrompt = null;
+        this.installAnalytics = this.loadInstallAnalytics();
+        
+        // Notification state
+        this.mealNotificationIntervals = [];
         
         this.init();
     }
@@ -171,6 +175,11 @@ class MessTrack {
         this.initializeMealTimes();
         // Initialize PWA install handlers/UI
         this.initInstallHandlers();
+        
+        // Setup meal notifications if enabled
+        if (this.data.settings.notifications) {
+            this.setupMealNotifications();
+        }
         
         // Update date every minute
         setInterval(() => this.updateDateTime(), 60000);
@@ -376,8 +385,12 @@ class MessTrack {
                 this.saveData();
                 if (e.target.checked) {
                     this.requestNotificationPermission();
+                    this.setupMealNotifications();
                 } else {
                     this.showToast('Notifications disabled');
+                    // Clear meal notification intervals
+                    this.mealNotificationIntervals.forEach(id => clearInterval(id));
+                    this.mealNotificationIntervals = [];
                 }
             });
         }
@@ -1071,27 +1084,40 @@ class MessTrack {
     }
 
     // ====================
-    // Notifications
+    // Notification Management
     // ====================
     requestNotificationPermission() {
-        if ('Notification' in window) {
-            Notification.requestPermission().then(permission => {
-                if (permission === 'granted') {
-                    this.showToast('Notifications enabled!');
-                    this.scheduleReminder();
-                } else {
-                    this.showToast('Notifications permission denied');
-                    this.data.settings.notifications = false;
-                    this.saveData();
-                    document.getElementById('notificationToggle').checked = false;
-                }
-            });
+        if (!('Notification' in window)) {
+            this.showToast('Notifications not supported');
+            return;
         }
+
+        Notification.requestPermission().then(permission => {
+            if (permission === 'granted') {
+                this.showToast('Notifications enabled! 🔔');
+                this.setupMealNotifications();
+                
+                // Send a test notification
+                setTimeout(() => {
+                    new Notification('MessTrack Notifications Active', {
+                        body: 'You\'ll receive reminders at your meal times!',
+                        icon: 'icon-192.png',
+                        badge: 'icon-192.png'
+                    });
+                }, 1000);
+            } else {
+                this.showToast('Notification permission denied');
+                this.data.settings.notifications = false;
+                const toggle = document.getElementById('notificationToggle');
+                if (toggle) toggle.checked = false;
+                this.saveData();
+            }
+        });
     }
 
     scheduleReminder() {
         if (!this.data.settings.notifications) return;
-
+        
         const now = new Date();
         const today = this.getTodayString();
         const todayData = this.data.attendance[today] || {
@@ -2276,21 +2302,29 @@ class MessTrack {
     // ====================
     initInstallHandlers() {
         const installBtn = document.getElementById('installAppBtn');
+        const installTeaserBtn = document.getElementById('installTeaserBtn');
 
+        // Main install button
         if (installBtn) {
             installBtn.addEventListener('click', async () => {
-                if (!this.deferredPrompt) return;
-                this.deferredPrompt.prompt();
-                try {
-                    const choice = await this.deferredPrompt.userChoice;
-                    if (choice && choice.outcome === 'accepted') {
-                        this.showToast('Installing MessTrack...');
-                    }
-                } catch (e) {
-                    // ignore
-                }
-                this.deferredPrompt = null;
-                this.updateInstallUI();
+                await this.handleInstallClick();
+            });
+        }
+        
+        // Teaser banner install button
+        if (installTeaserBtn) {
+            installTeaserBtn.addEventListener('click', async () => {
+                await this.handleInstallClick();
+                this.hideInstallTeaser();
+            });
+        }
+
+        // Dismiss teaser banner
+        const dismissTeaser = document.getElementById('dismissInstallTeaser');
+        if (dismissTeaser) {
+            dismissTeaser.addEventListener('click', () => {
+                this.hideInstallTeaser();
+                this.trackInstallEvent('teaser_dismissed');
             });
         }
 
@@ -2298,15 +2332,54 @@ class MessTrack {
             e.preventDefault();
             this.deferredPrompt = e;
             this.updateInstallUI();
+            this.trackInstallEvent('prompt_available');
+            
+            // Show teaser banner for first-time visitors on mobile
+            if (this.shouldShowInstallTeaser()) {
+                setTimeout(() => this.showInstallTeaser(), 3000);
+            }
         });
 
         window.addEventListener('appinstalled', () => {
             this.deferredPrompt = null;
             this.updateInstallUI();
-            this.showToast('MessTrack installed successfully!');
+            this.trackInstallEvent('installed');
+            this.showToast('MessTrack installed successfully! 🎉');
         });
 
         // Initialize UI state
+        this.updateInstallUI();
+    }
+    
+    async handleInstallClick() {
+        if (!this.deferredPrompt) {
+            // Show guidance for iOS or already installed
+            if (this.isIos()) {
+                this.showToast('Use Share → Add to Home Screen');
+            } else if (this.isStandalone()) {
+                this.showToast('App is already installed!');
+            }
+            return;
+        }
+        
+        this.trackInstallEvent('install_clicked');
+        this.hapticFeedback('medium');
+        
+        try {
+            this.deferredPrompt.prompt();
+            const choice = await this.deferredPrompt.userChoice;
+            
+            if (choice && choice.outcome === 'accepted') {
+                this.trackInstallEvent('install_accepted');
+                this.showToast('Installing MessTrack... 📲');
+            } else {
+                this.trackInstallEvent('install_dismissed');
+            }
+        } catch (e) {
+            console.error('Install error:', e);
+        }
+        
+        this.deferredPrompt = null;
         this.updateInstallUI();
     }
 
@@ -2317,11 +2390,23 @@ class MessTrack {
 
         installBtn.classList.add('hidden');
         iosHint.classList.add('hidden');
+        
+        const isInstalled = this.isStandalone();
 
-        if (this.isStandalone()) {
-            return; // already installed
+        if (isInstalled) {
+            // Show "Open App" message
+            installBtn.innerHTML = '<i class="fas fa-check-circle mr-2"></i>App Installed';
+            installBtn.classList.remove('hidden');
+            installBtn.disabled = true;
+            installBtn.style.opacity = '0.6';
+            return;
         }
 
+        // Not installed - show appropriate option
+        installBtn.innerHTML = '<i class="fas fa-download mr-2"></i>Install App';
+        installBtn.disabled = false;
+        installBtn.style.opacity = '1';
+        
         if (this.deferredPrompt) {
             installBtn.classList.remove('hidden');
             return;
@@ -2343,6 +2428,191 @@ class MessTrack {
         const iOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
         return iOS && isSafari;
+    }
+    
+    isMobile() {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+            || (window.innerWidth <= 768);
+    }
+    
+    // Install Analytics
+    loadInstallAnalytics() {
+        const data = localStorage.getItem('messtrack_install_analytics');
+        return data ? JSON.parse(data) : {
+            promptShown: 0,
+            teaserShown: 0,
+            teaserDismissed: 0,
+            installClicked: 0,
+            installAccepted: 0,
+            installDismissed: 0,
+            lastTeaserShown: null,
+            firstVisit: Date.now()
+        };
+    }
+    
+    saveInstallAnalytics() {
+        localStorage.setItem('messtrack_install_analytics', JSON.stringify(this.installAnalytics));
+    }
+    
+    trackInstallEvent(event) {
+        switch(event) {
+            case 'prompt_available':
+                this.installAnalytics.promptShown++;
+                break;
+            case 'teaser_shown':
+                this.installAnalytics.teaserShown++;
+                this.installAnalytics.lastTeaserShown = Date.now();
+                break;
+            case 'teaser_dismissed':
+                this.installAnalytics.teaserDismissed++;
+                break;
+            case 'install_clicked':
+                this.installAnalytics.installClicked++;
+                break;
+            case 'install_accepted':
+                this.installAnalytics.installAccepted++;
+                break;
+            case 'install_dismissed':
+                this.installAnalytics.installDismissed++;
+                break;
+            case 'installed':
+                this.installAnalytics.installed = Date.now();
+                break;
+        }
+        this.saveInstallAnalytics();
+    }
+    
+    shouldShowInstallTeaser() {
+        // Don't show if:
+        // - Already installed
+        // - Not mobile
+        // - Teaser dismissed more than 2 times
+        // - Shown in last 24 hours
+        
+        if (this.isStandalone()) return false;
+        if (!this.isMobile()) return false;
+        if (this.installAnalytics.teaserDismissed >= 3) return false;
+        
+        const lastShown = this.installAnalytics.lastTeaserShown;
+        if (lastShown && (Date.now() - lastShown < 24 * 60 * 60 * 1000)) {
+            return false; // Shown in last 24 hours
+        }
+        
+        return true;
+    }
+    
+    showInstallTeaser() {
+        const teaser = document.getElementById('installTeaser');
+        if (!teaser) return;
+        
+        this.trackInstallEvent('teaser_shown');
+        teaser.classList.remove('hidden');
+        
+        // Animate in
+        setTimeout(() => {
+            teaser.style.transform = 'translateY(0)';
+        }, 100);
+        
+        // Auto-hide after 10 seconds
+        setTimeout(() => {
+            this.hideInstallTeaser();
+        }, 10000);
+    }
+    
+    hideInstallTeaser() {
+        const teaser = document.getElementById('installTeaser');
+        if (!teaser) return;
+        
+        teaser.style.transform = 'translateY(40px)';
+        setTimeout(() => {
+            teaser.classList.add('hidden');
+        }, 500);
+    }
+    
+    // ====================
+    // Meal-Time Notifications
+    // ====================
+    setupMealNotifications() {
+        // Clear existing intervals
+        this.mealNotificationIntervals.forEach(id => clearInterval(id));
+        this.mealNotificationIntervals = [];
+        
+        if (!this.data.settings.notifications) return;
+        
+        // Check every minute if it's meal time
+        const checkInterval = setInterval(() => {
+            this.checkMealTime();
+        }, 60000); // Every minute
+        
+        this.mealNotificationIntervals.push(checkInterval);
+        
+        // Also check immediately
+        this.checkMealTime();
+    }
+    
+    checkMealTime() {
+        if (!this.data.settings.notifications) return;
+        
+        const now = new Date();
+        const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const today = this.getTodayString();
+        const todayData = this.data.attendance[today] || { lunch: false, dinner: false };
+        
+        const lunchTime = this.data.settings.lunchTime || '12:00';
+        const dinnerTime = this.data.settings.dinnerTime || '19:00';
+        
+        // Check if it's lunch time and not marked
+        if (currentTime === lunchTime && !todayData.lunch) {
+            this.sendMealNotification('lunch');
+        }
+        
+        // Check if it's dinner time and not marked
+        if (currentTime === dinnerTime && !todayData.dinner) {
+            this.sendMealNotification('dinner');
+        }
+    }
+    
+    sendMealNotification(mealType) {
+        const title = 'MessTrack Reminder';
+        const body = mealType === 'lunch' 
+            ? '🍽️ It\'s lunch time! Don\'t forget to mark your attendance.'
+            : '🌙 It\'s dinner time! Don\'t forget to mark your attendance.';
+        const icon = 'icon-192.png';
+        
+        // Check last notification to avoid duplicates within same minute
+        const lastNotifKey = `last_${mealType}_notification`;
+        const lastNotif = localStorage.getItem(lastNotifKey);
+        const now = Date.now();
+        
+        if (lastNotif && (now - parseInt(lastNotif) < 60000)) {
+            return; // Already sent in last minute
+        }
+        
+        localStorage.setItem(lastNotifKey, now.toString());
+        
+        // Show notification
+        if ('Notification' in window && Notification.permission === 'granted') {
+            const notification = new Notification(title, {
+                body,
+                icon,
+                badge: icon,
+                tag: `meal-${mealType}`,
+                requireInteraction: false,
+                vibrate: [200, 100, 200]
+            });
+            
+            notification.onclick = () => {
+                window.focus();
+                this.showPage('dashboard');
+                notification.close();
+            };
+            
+            // Haptic feedback on mobile
+            this.hapticFeedback('medium');
+        } else {
+            // Fallback to toast
+            this.showToast(body);
+        }
     }
 }
 

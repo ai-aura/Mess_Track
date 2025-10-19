@@ -616,6 +616,25 @@
         </button>
     </div>
 
+    <!-- Install Teaser Banner -->
+    <div id="installTeaser" class="fixed bottom-20 left-4 right-4 max-w-md mx-auto glass p-4 rounded-2xl shadow-2xl transform translate-y-40 transition-all duration-500 z-50 hidden">
+        <button id="dismissInstallTeaser" class="absolute top-2 right-2 opacity-60 hover:opacity-100">
+            <i class="fas fa-times"></i>
+        </button>
+        <div class="flex items-center gap-3">
+            <div class="w-12 h-12 glass rounded-full flex items-center justify-center text-2xl">
+                🍽️
+            </div>
+            <div class="flex-1">
+                <div class="font-bold text-sm">Install MessTrack</div>
+                <div class="text-xs opacity-80">Access faster, work offline!</div>
+            </div>
+            <button id="installTeaserBtn" class="btn-glass px-4 py-2 text-sm font-bold">
+                Install
+            </button>
+        </div>
+    </div>
+
     <!-- Gesture Hints -->
     <div id="gestureHints" class="hidden"></div>
 
@@ -941,11 +960,52 @@
 
                         <!-- About -->
                         <div>
-                            <h3 class="text-lg font-bold mb-4">About</h3>
-                            <div class="opacity-60">
-                                <p class="mb-2">MessTrack v1.0.0</p>
-                                <p class="text-sm">An offline-first mess attendance tracker for hostel students</p>
-                                <p class="text-sm mt-2">© 2024 MessTrack. All rights reserved.</p>
+                            <h3 class="text-lg font-bold mb-4">About MessTrack</h3>
+                            <div class="space-y-4">
+                                <div class="glass p-4 rounded-lg">
+                                    <div class="flex items-center gap-3 mb-3">
+                                        <div class="text-3xl">🍽️</div>
+                                        <div>
+                                            <p class="font-bold">MessTrack v2.0.0</p>
+                                            <p class="text-xs opacity-70">Enhanced Edition</p>
+                                        </div>
+                                    </div>
+                                    <p class="text-sm opacity-80 leading-relaxed">
+                                        A modern, offline-first mess attendance tracker designed specifically for hostel students. Track your meals, monitor attendance patterns, and manage your mess schedule effortlessly.
+                                    </p>
+                                </div>
+                                
+                                <div class="glass p-4 rounded-lg">
+                                    <h4 class="font-bold text-sm mb-2">✨ Key Features</h4>
+                                    <ul class="text-xs space-y-1 opacity-80">
+                                        <li>• Offline-first architecture with PWA support</li>
+                                        <li>• Quick attendance marking with FAB</li>
+                                        <li>• Weekly & monthly views</li>
+                                        <li>• Bulk edit mode for multiple days</li>
+                                        <li>• QR code sharing & PDF/CSV export</li>
+                                        <li>• Custom meal times & notifications</li>
+                                        <li>• Dark/Light glassmorphism themes</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="glass p-4 rounded-lg">
+                                    <h4 class="font-bold text-sm mb-2">📊 Privacy & Data</h4>
+                                    <p class="text-xs opacity-80 leading-relaxed">
+                                        All your data is stored locally on your device using browser LocalStorage. We don't collect, store, or transmit any personal information. Your privacy is our priority.
+                                    </p>
+                                </div>
+                                
+                                <div class="glass p-4 rounded-lg">
+                                    <h4 class="font-bold text-sm mb-2">🚀 Technology</h4>
+                                    <p class="text-xs opacity-80">
+                                        Built with vanilla JavaScript, TailwindCSS, and modern PWA standards. No frameworks, no bloat - just pure performance.
+                                    </p>
+                                </div>
+                                
+                                <div class="text-center pt-2">
+                                    <p class="text-xs opacity-60">© 2024 MessTrack. All rights reserved.</p>
+                                    <p class="text-xs opacity-60 mt-1">Made with ❤️ for hostel students</p>
+                                </div>
                             </div>
                         </div>
                     </div>
