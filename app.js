@@ -31,6 +31,8 @@ class MessTrack {
         this.longPressTimer = null;
         this.gestureHintsShown = JSON.parse(localStorage.getItem('gestureHintsShown') || '{}');
         this.appVersion = '2.0.0';
+        // PWA install state
+        this.deferredPrompt = null;
         
         this.init();
     }
@@ -167,6 +169,8 @@ class MessTrack {
         this.updateDashboard();
         this.updateDateTime();
         this.initializeMealTimes();
+        // Initialize PWA install handlers/UI
+        this.initInstallHandlers();
         
         // Update date every minute
         setInterval(() => this.updateDateTime(), 60000);
@@ -445,7 +449,8 @@ class MessTrack {
                 this.updateSummary();
                 break;
             case 'settings':
-                // Settings are already initialized
+                // Refresh install UI when opening Settings
+                this.updateInstallUI();
                 break;
         }
     }
@@ -2264,6 +2269,80 @@ class MessTrack {
             localStorage.clear();
             location.reload();
         }
+    }
+
+    // ====================
+    // PWA Install Flow
+    // ====================
+    initInstallHandlers() {
+        const installBtn = document.getElementById('installAppBtn');
+
+        if (installBtn) {
+            installBtn.addEventListener('click', async () => {
+                if (!this.deferredPrompt) return;
+                this.deferredPrompt.prompt();
+                try {
+                    const choice = await this.deferredPrompt.userChoice;
+                    if (choice && choice.outcome === 'accepted') {
+                        this.showToast('Installing MessTrack...');
+                    }
+                } catch (e) {
+                    // ignore
+                }
+                this.deferredPrompt = null;
+                this.updateInstallUI();
+            });
+        }
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            this.deferredPrompt = e;
+            this.updateInstallUI();
+        });
+
+        window.addEventListener('appinstalled', () => {
+            this.deferredPrompt = null;
+            this.updateInstallUI();
+            this.showToast('MessTrack installed successfully!');
+        });
+
+        // Initialize UI state
+        this.updateInstallUI();
+    }
+
+    updateInstallUI() {
+        const installBtn = document.getElementById('installAppBtn');
+        const iosHint = document.getElementById('installIosHint');
+        if (!installBtn || !iosHint) return;
+
+        installBtn.classList.add('hidden');
+        iosHint.classList.add('hidden');
+
+        if (this.isStandalone()) {
+            return; // already installed
+        }
+
+        if (this.deferredPrompt) {
+            installBtn.classList.remove('hidden');
+            return;
+        }
+
+        if (this.isIos()) {
+            iosHint.classList.remove('hidden');
+        }
+    }
+
+    isStandalone() {
+        return window.matchMedia('(display-mode: standalone)').matches
+            || window.navigator.standalone === true
+            || document.referrer.includes('android-app://');
+    }
+
+    isIos() {
+        const ua = window.navigator.userAgent || '';
+        const iOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+        return iOS && isSafari;
     }
 }
 
