@@ -1,18 +1,32 @@
 // MessTrack Service Worker
-// Version 1.0.0
+// Version 2.0.6 - Optimized caching strategy
 
-const CACHE_NAME = 'messtrack-v1.0.0';
+const CACHE_NAME = 'messtrack-v2.0.6';
+const CACHE_STATIC = 'messtrack-static-v2.0.6';
+const CACHE_DYNAMIC = 'messtrack-dynamic-v2.0.6';
+
+// Core app files - always cache
 const urlsToCache = [
     '/',
     '/index.html',
     '/app.js',
-    '/manifest.json',
-    '/icon-192.png',
-    '/icon-512.png',
+    '/app-fixes.js',
+    '/enhanced-core-functions.js',
+    '/enhanced-app-improvements.js',
+    '/enhanced-module-improvements.js',
+    '/calendar-integration.js',
+    '/glass-ui-enhancer.js',
+    '/glassmorphism-ui.css',
+    '/optimization-styles.css',
+    '/manifest.json'
+];
+
+// External resources - cache with network fallback
+const externalResources = [
     'https://cdn.tailwindcss.com',
-    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
-    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/webfonts/fa-solid-900.woff2',
-    'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
+    'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.3/qrcode.min.js'
 ];
 
 // Install event - cache resources
